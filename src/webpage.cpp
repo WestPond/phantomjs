@@ -73,6 +73,9 @@
 #include <fcntl.h>
 #endif
 
+#include <sys/mman.h>
+#include <unistd.h>
+
 // Ensure we have at least head and body.
 #define BLANK_HTML                      "<html><head></head><body></body></html>"
 #define CALLBACKS_OBJECT_NAME           "_phantom"
@@ -1042,6 +1045,59 @@ bool WebPage::render(const QString& fileName, const QVariantMap& option)
     }
 
     return retval;
+}
+
+QString WebPage::renderRaw()
+{
+    QSize contentsSize = m_mainFrame->contentsSize();
+    contentsSize -= QSize(m_scrollPosition.x(), m_scrollPosition.y());
+    QRect frameRect = QRect(QPoint(0, 0), contentsSize);
+    if (!m_clipRect.isNull()) {
+        frameRect = m_clipRect;
+    }
+
+    QSize viewportSize = m_customWebPage->viewportSize();
+    m_customWebPage->setViewportSize(contentsSize);
+
+    char tmp_file[ 32 ];
+    snprintf( tmp_file, sizeof( tmp_file ), "/tmp/phjsXXXXXX" );
+    int fd = mkstemp( tmp_file );
+    if( -1 == fd )
+        return "";
+
+    size_t size = ( contentsSize.width() * contentsSize.height() * 4 ) + 4;
+    ftruncate( fd, size );
+
+    void *map = mmap( 0, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0 );
+    if( MAP_FAILED == map )
+    {
+        ::close( fd );
+        return "";
+    }
+    unsigned char *data = reinterpret_cast< unsigned char * >( map );
+    memset( data, 0, size );
+
+    data[ 0 ] = contentsSize.width() >> 8;
+    data[ 1 ] = contentsSize.width();
+    data[ 2 ] = contentsSize.height() >> 8;
+    data[ 3 ] = contentsSize.height();
+
+    QImage buffer( data + 4, contentsSize.width(), contentsSize.height(), QImage::Format_ARGB32 );
+
+    QPainter painter;
+    painter.begin(&buffer);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    m_mainFrame->render(&painter, QRegion(frameRect));
+    painter.end();
+
+    m_customWebPage->setViewportSize(viewportSize);
+
+    munmap( map, size );
+    ::close( fd );
+
+    return tmp_file;
 }
 
 QString WebPage::renderBase64(const QByteArray& format)
