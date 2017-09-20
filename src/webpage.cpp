@@ -1060,7 +1060,7 @@ QString WebPage::renderRaw()
     m_customWebPage->setViewportSize(contentsSize);
 
     char tmp_file[ 32 ];
-    snprintf( tmp_file, sizeof( tmp_file ), "/tmp/phjsXXXXXX" );
+    snprintf( tmp_file, sizeof( tmp_file ), "/tmp/phjs_%hu_XXXXXX", getpid() );
     int fd = mkstemp( tmp_file );
     if( -1 == fd )
         return "";
